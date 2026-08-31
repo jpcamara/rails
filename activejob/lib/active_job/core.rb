@@ -20,10 +20,23 @@ module ActiveJob
     attr_writer :serialized_arguments
 
     # Time when the job should be performed
-    attr_accessor :scheduled_at
+    def scheduled_at
+      @scheduled_at ||= deserialize_time(@serialized_scheduled_at) if @scheduled_at || @serialized_scheduled_at
+      @scheduled_at
+    end
 
-    # Job Identifier
-    attr_accessor :job_id
+    def scheduled_at=(value)
+      @serialized_scheduled_at = nil
+      @scheduled_at = value
+    end
+
+    # Job Identifier. Generated lazily: jobs instantiated to be deserialized
+    # get their id from the job data, without paying for one they won't use.
+    def job_id
+      @job_id ||= SecureRandom.uuid
+    end
+
+    attr_writer :job_id
 
     # Queue in which the job will reside.
     attr_writer :queue_name
@@ -49,8 +62,17 @@ module ActiveJob
     # Timezone to be used during the job.
     attr_accessor :timezone
 
-    # Track when a job was enqueued
-    attr_accessor :enqueued_at
+    # Track when a job was enqueued. Parsed lazily from the serialized job
+    # data: most jobs are executed without anything reading it.
+    def enqueued_at
+      @enqueued_at ||= deserialize_time(@serialized_enqueued_at) if @enqueued_at || @serialized_enqueued_at
+      @enqueued_at
+    end
+
+    def enqueued_at=(value)
+      @serialized_enqueued_at = nil
+      @enqueued_at = value
+    end
 
     # Track whether the adapter received the job successfully.
     attr_writer :successfully_enqueued # :nodoc:
@@ -103,9 +125,11 @@ module ActiveJob
     def initialize(*arguments, **kwargs)
       arguments << Hash.ruby2_keywords_hash(kwargs) unless kwargs.empty?
       @arguments  = arguments
-      @job_id     = SecureRandom.uuid
+      @job_id     = nil
       @queue_name = self.class.queue_name
       @scheduled_at = nil
+      @serialized_scheduled_at = nil
+      @serialized_enqueued_at = nil
       @priority   = self.class.priority
       @executions = 0
       @exception_executions = {}
@@ -167,8 +191,8 @@ module ActiveJob
       self.exception_executions = job_data["exception_executions"]
       self.locale               = job_data["locale"] || I18n.locale.to_s
       self.timezone             = job_data["timezone"] || Time.zone&.name
-      self.enqueued_at          = deserialize_time(job_data["enqueued_at"]) if job_data["enqueued_at"]
-      self.scheduled_at         = deserialize_time(job_data["scheduled_at"]) if job_data["scheduled_at"]
+      @serialized_enqueued_at   = job_data["enqueued_at"]
+      @serialized_scheduled_at  = job_data["scheduled_at"]
     end
 
     # Configures the job with the given options.
