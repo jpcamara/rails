@@ -160,7 +160,7 @@ class ArgumentSerializationTest < ActiveSupport::TestCase
       ActiveJob::Arguments.serialize([symbol_key]).first
     )
     assert_equal(
-      { "a" => 1, "_aj_symbol_keys" => [] },
+      { "a" => 1 },
       ActiveJob::Arguments.serialize([string_key]).first
     )
     assert_equal(

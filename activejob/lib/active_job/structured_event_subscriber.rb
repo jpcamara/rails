@@ -4,6 +4,7 @@ require "active_support/structured_event_subscriber"
 
 module ActiveJob
   class StructuredEventSubscriber < ActiveSupport::StructuredEventSubscriber # :nodoc:
+    emits_at_level :enqueue, :info
     def enqueue(event)
       job = event.payload[:job]
       adapter = event.payload[:adapter]
@@ -28,6 +29,7 @@ module ActiveJob
       emit_event("active_job.enqueued", payload)
     end
 
+    emits_at_level :enqueue_at, :info
     def enqueue_at(event)
       job = event.payload[:job]
       adapter = event.payload[:adapter]

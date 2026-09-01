@@ -53,8 +53,12 @@ module ActiveJob
     # Hash that contains the number of times this job handled errors for each specific retry_on declaration.
     # Keys are the string representation of the exceptions listed in the retry_on declaration,
     # while its associated value holds the number of executions where the corresponding retry_on
-    # declaration handled one of its listed exceptions.
-    attr_accessor :exception_executions
+    # declaration handled one of its listed exceptions. Allocated on first use.
+    def exception_executions
+      @exception_executions ||= {}
+    end
+
+    attr_writer :exception_executions
 
     # I18n.locale to be used during the job.
     attr_accessor :locale
@@ -132,27 +136,46 @@ module ActiveJob
       @serialized_enqueued_at = nil
       @priority   = self.class.priority
       @executions = 0
-      @exception_executions = {}
+      @exception_executions = nil
       @timezone   = Time.zone&.name
     end
 
     # Returns a hash with the job data that can safely be passed to the
-    # queuing adapter.
+    # queuing adapter. Keys whose values still carry their defaults are
+    # omitted; +deserialize+ restores them.
     def serialize
-      {
+      data = {
         "job_class"  => self.class.name,
         "job_id"     => job_id,
-        "provider_job_id" => provider_job_id,
         "queue_name" => queue_name,
         "priority"   => priority,
         "arguments"  => serialize_arguments_if_needed(arguments),
-        "executions" => executions,
-        "exception_executions" => exception_executions,
-        "locale"     => locale || I18n.locale.to_s,
+        "locale"     => locale || (I18n.locale.is_a?(Symbol) ? I18n.locale.name : I18n.locale.to_s),
         "timezone"   => timezone,
-        "enqueued_at" => Time.now.utc.iso8601(9),
-        "scheduled_at" => scheduled_at ? scheduled_at.utc.iso8601(9) : nil,
+        "enqueued_at" => Core.utc_iso8601_now,
       }
+      data["provider_job_id"] = provider_job_id if provider_job_id
+      data["executions"] = executions unless executions == 0
+      data["exception_executions"] = exception_executions unless exception_executions.nil? || exception_executions.empty?
+      data["scheduled_at"] = scheduled_at.utc.iso8601(9) if scheduled_at
+      data
+    end
+
+    # Formats the current UTC time as nanosecond-precision ISO8601, reusing
+    # the formatted prefix within the same second: under bursts of enqueues
+    # only the fractional part changes. The cache is a benign race: any
+    # concurrently written value is valid for its own second.
+    def self.utc_iso8601_now # :nodoc:
+      now = Time.now
+      sec = now.to_i
+      cached_sec, prefix = @iso8601_cache
+
+      unless sec == cached_sec
+        prefix = Time.at(sec).utc.strftime("%Y-%m-%dT%H:%M:%S.")
+        @iso8601_cache = [ sec, prefix ].freeze
+      end
+
+      format("%s%09dZ", prefix, now.nsec)
     end
 
     # Attaches the stored job data to the current instance. Receives a hash
@@ -187,8 +210,8 @@ module ActiveJob
       self.queue_name           = job_data["queue_name"]
       self.priority             = job_data["priority"]
       self.serialized_arguments = job_data["arguments"]
-      self.executions           = job_data["executions"]
-      self.exception_executions = job_data["exception_executions"]
+      self.executions           = job_data["executions"] || 0
+      self.exception_executions = job_data["exception_executions"] || {}
       self.locale               = job_data["locale"] || I18n.locale.to_s
       self.timezone             = job_data["timezone"] || Time.zone&.name
       @serialized_enqueued_at   = job_data["enqueued_at"]

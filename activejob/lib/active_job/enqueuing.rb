@@ -79,7 +79,7 @@ module ActiveJob
     #    my_job_instance.enqueue wait_until: Date.tomorrow.midnight
     #    my_job_instance.enqueue priority: 10
     def enqueue(options = {})
-      set(options)
+      set(options) unless options.empty?
       self.successfully_enqueued = false
       self.enqueue_error = nil
 

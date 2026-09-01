@@ -9,6 +9,7 @@ module ActiveSupport
       include ColorizeLogging
 
       LOG_LEVELS = [:debug, :info, :error].freeze
+      LOG_LEVEL_PREDICATES = { debug: :debug?, info: :info?, error: :error? }.freeze # :nodoc:
 
       class << self
         def event_log_level(method_name, level)
@@ -32,9 +33,27 @@ module ActiveSupport
             name = event[:name]
             if (dot_idx = name.index("."))
               event_namespace = name[0, dot_idx]
-              namespace == event_namespace
+              namespace == event_namespace && level_enabled?(name[(dot_idx + 1)..])
             end
           end
+        end
+
+        # Whether the configured logger would emit this event at its declared
+        # level. Consulted from the subscription filter so events nobody will
+        # log are dropped before the reporter builds them.
+        def level_enabled?(event_method)
+          severity_enabled?(log_levels[event_method])
+        end
+
+        def wants_source_location? # :nodoc:
+          false
+        end
+
+        def severity_enabled?(level) # :nodoc:
+          predicate = LOG_LEVEL_PREDICATES[level]
+          return false unless predicate
+
+          logger ? logger.public_send(predicate) : false
         end
       end
 

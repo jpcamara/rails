@@ -56,7 +56,7 @@ module ActiveSupport
     test "#subscribe" do
       reporter = ActiveSupport::EventReporter.new
       subscribers = reporter.subscribe(@subscriber)
-      assert_equal([{ subscriber: @subscriber, filter: nil }], subscribers)
+      assert_equal([{ subscriber: @subscriber, filter: nil, source_location: true, severity_class: nil }], subscribers)
     end
 
     test "#subscribe with filter" do
@@ -65,7 +65,7 @@ module ActiveSupport
       filter = ->(event) { event[:name].start_with?("user.") }
       subscribers = reporter.subscribe(@subscriber, &filter)
 
-      assert_equal([{ subscriber: @subscriber, filter: filter }], subscribers)
+      assert_equal([{ subscriber: @subscriber, filter: filter, source_location: true, severity_class: nil }], subscribers)
     end
 
     test "#subscribe raises ArgumentError when sink doesn't respond to emit" do
