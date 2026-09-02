@@ -24,7 +24,6 @@ module ActiveJob
       # also configure a value, which will apply to themselves and any
       # subclasses.
       class_attribute :log_arguments, instance_accessor: false, default: true
-
     end
 
     def perform_now # :nodoc:

@@ -4,7 +4,6 @@ require "active_support/structured_event_subscriber"
 
 module ActiveJob
   class StructuredEventSubscriber < ActiveSupport::StructuredEventSubscriber # :nodoc:
-    emits_at_level :enqueue, :info
     def enqueue(event)
       job = event.payload[:job]
       adapter = event.payload[:adapter]
@@ -28,8 +27,8 @@ module ActiveJob
 
       emit_event("active_job.enqueued", payload)
     end
+    emits_at_level :enqueue, :info
 
-    emits_at_level :enqueue_at, :info
     def enqueue_at(event)
       job = event.payload[:job]
       adapter = event.payload[:adapter]
@@ -54,6 +53,7 @@ module ActiveJob
 
       emit_event("active_job.enqueued_at", payload)
     end
+    emits_at_level :enqueue_at, :info
 
     def enqueue_all(event)
       jobs = event.payload[:jobs]
@@ -80,13 +80,14 @@ module ActiveJob
         job_id: job.job_id,
         queue: job.queue_name,
         adapter: ActiveJob.adapter_name(adapter),
-        enqueued_at: job.enqueued_at&.utc&.iso8601(9),
+        enqueued_at: job.serialized_enqueued_at,
       }
       if job.class.log_arguments?
         payload[:arguments] = job.arguments
       end
       emit_event("active_job.started", payload)
     end
+    emits_at_level :perform_start, :info
 
     def perform(event)
       job = event.payload[:job]
@@ -124,6 +125,7 @@ module ActiveJob
         exception_message: exception&.message
       )
     end
+    emits_at_level :enqueue_retry, :info
 
     def retry_stopped(event)
       job = event.payload[:job]
