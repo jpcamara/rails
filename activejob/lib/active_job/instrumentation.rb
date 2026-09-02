@@ -16,8 +16,15 @@ module ActiveJob
   module Instrumentation # :nodoc:
     extend ActiveSupport::Concern
 
-    EVENT_NAMES = %i[ enqueue enqueue_at perform perform_start enqueue_retry retry_stopped discard ]
-      .index_with { |operation| "#{operation}.active_job" }.freeze
+    EVENT_NAMES = {
+      enqueue: "enqueue.active_job",
+      enqueue_at: "enqueue_at.active_job",
+      perform: "perform.active_job",
+      perform_start: "perform_start.active_job",
+      enqueue_retry: "enqueue_retry.active_job",
+      retry_stopped: "retry_stopped.active_job",
+      discard: "discard.active_job",
+    }.freeze
 
     def perform_now
       instrument(:perform) { super }
