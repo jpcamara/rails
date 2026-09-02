@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "helper"
+require "jobs/hello_job"
 require "active_support/testing/event_reporter_assertions"
 require "active_job/structured_event_subscriber"
 require "active_job/continuable"
@@ -67,6 +68,33 @@ module ActiveJob
           end
         end
       end
+    end
+
+    def test_perform_events_are_silenced_at_a_level_nobody_logs_and_kept_for_plain_subscribers
+      reporter = ActiveSupport.event_reporter
+      original_subscribers = reporter.subscribers.dup
+      reporter.subscribers.clear
+      subscriber = ActiveJob::StructuredEventSubscriber.send(:subscriber)
+      logger = ActiveSupport::Logger.new(IO::NULL)
+      ActiveJob::LogSubscriber.logger = logger
+      reporter.subscribe(ActiveJob::LogSubscriber.new, &ActiveJob::LogSubscriber.subscription_filter)
+
+      logger.level = Logger::WARN
+      assert subscriber.silenced?("perform.active_job")
+      assert subscriber.silenced?("perform_start.active_job")
+      assert_not ActiveSupport::Notifications.notifier.listening?("perform.active_job")
+
+      events = []
+      plain = ActiveSupport::Notifications.subscribe("perform.active_job") { |*args| events << args }
+      assert ActiveSupport::Notifications.notifier.listening?("perform.active_job")
+      HelloJob.perform_now
+      assert_equal 1, events.size
+
+      logger.level = Logger::INFO
+      assert_not subscriber.silenced?("perform.active_job")
+    ensure
+      ActiveSupport::Notifications.unsubscribe(plain) if plain
+      reporter.subscribers.replace(original_subscribers) if original_subscribers
     end
 
     def test_enqueue_job

@@ -110,6 +110,9 @@ module ActiveJob
 
       emit_event("active_job.completed", payload)
     end
+    # The log subscriber declares `completed` at info, failures included, so a
+    # logger above info never sees this event either way
+    emits_at_level :perform, :info
 
     def enqueue_retry(event)
       job = event.payload[:job]
