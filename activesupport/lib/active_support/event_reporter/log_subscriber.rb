@@ -40,7 +40,9 @@ module ActiveSupport
 
         # Whether the configured logger would emit this event at its declared
         # level. Consulted from the subscription filter so events nobody will
-        # log are dropped before the reporter builds them.
+        # log are dropped before the reporter builds them. Events with no
+        # declared level are always delivered, so a subscriber that handles
+        # them in its own +emit+ keeps receiving them.
         def level_enabled?(event_method)
           severity_enabled?(log_levels[event_method])
         end
@@ -49,11 +51,17 @@ module ActiveSupport
           false
         end
 
+        # Answers whether the logger would accept the given severity. A
+        # logger that cannot answer, or no logger at all, leaves the event
+        # in: the subscriber's own +emit+ then raises inside the reporter's
+        # error handling, exactly where it did before the filter asked.
         def severity_enabled?(level) # :nodoc:
           predicate = LOG_LEVEL_PREDICATES[level]
-          return false unless predicate
+          return true unless predicate
 
-          logger ? logger.public_send(predicate) : false
+          logger.public_send(predicate)
+        rescue StandardError
+          true
         end
       end
 

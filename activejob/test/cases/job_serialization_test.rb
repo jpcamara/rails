@@ -55,6 +55,54 @@ class JobSerializationTest < ActiveSupport::TestCase
     assert_equal current_time, job.scheduled_at
   end
 
+  test "a timestamp in the job data replaces one already set on the instance" do
+    freeze_time
+
+    job = HelloJob.new
+    job.set(wait_until: 1.hour.from_now)
+    job.deserialize(HelloJob.new.set(wait_until: 2.hours.from_now).serialize)
+
+    assert_equal 2.hours.from_now, job.scheduled_at
+  end
+
+  test "timestamps are parsed from the job data when read, and assignment wins over them" do
+    freeze_time
+
+    job = HelloJob.new
+    job.deserialize(HelloJob.new.set(wait_until: 1.hour.from_now).serialize)
+
+    assert_equal Time.now, job.enqueued_at
+    assert_equal 1.hour.from_now, job.scheduled_at
+
+    job.scheduled_at = nil
+    assert_nil job.scheduled_at
+    assert_nil job.serialize["scheduled_at"]
+  end
+
+  test "enqueued_at is the current UTC time at nanosecond precision" do
+    freeze_time
+
+    assert_equal Time.now.utc.iso8601(9), HelloJob.new.serialize["enqueued_at"]
+    assert_equal Time.now.utc.iso8601(9), HelloJob.new.serialize["enqueued_at"]
+
+    travel 1.second
+    assert_equal Time.now.utc.iso8601(9), HelloJob.new.serialize["enqueued_at"]
+  end
+
+  test "job id is generated once, the first time it is read" do
+    job = HelloJob.new
+
+    assert_equal job.job_id, job.serialize["job_id"]
+    assert_equal job.job_id, job.job_id
+  end
+
+  test "deserialization takes the job id from the job data" do
+    job = HelloJob.new
+    job.deserialize(HelloJob.new.serialize.merge("job_id" => "a-known-id"))
+
+    assert_equal "a-known-id", job.job_id
+  end
+
   test "deserializes enqueued_at when ActiveSupport.parse_json_times is true" do
     freeze_time
 

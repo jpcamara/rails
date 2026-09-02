@@ -80,13 +80,13 @@ module ActiveJob
         symbol_keys.select! { |k| k.is_a?(Symbol) }
         symbol_keys.map!(&:name)
 
-        result = serialize_hash(argument)
-        if Hash.ruby2_keywords_hash?(argument)
-          result[RUBY2_KEYWORDS_KEY] = symbol_keys
-        elsif !symbol_keys.empty?
-          # An absent symbol-keys list deserializes the same as an empty one
-          result[SYMBOL_KEYS_KEY] = symbol_keys
+        aj_hash_key = if Hash.ruby2_keywords_hash?(argument)
+          RUBY2_KEYWORDS_KEY
+        else
+          SYMBOL_KEYS_KEY
         end
+        result = serialize_hash(argument)
+        result[aj_hash_key] = symbol_keys
         result
       else
         Serializers.serialize(argument)

@@ -45,14 +45,9 @@ module ActiveJob
       end
 
       def queue_name_from_part(part_name) # :nodoc:
-        queue_name = (part_name || default_queue_name).to_s
-        prefix = queue_name_prefix.presence
-
-        if prefix
-          -"#{prefix}#{queue_name_delimiter}#{queue_name}"
-        else
-          -queue_name
-        end
+        queue_name = part_name || default_queue_name
+        name_parts = [queue_name_prefix.presence, queue_name]
+        -name_parts.compact.join(queue_name_delimiter)
       end
     end
 

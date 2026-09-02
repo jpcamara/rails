@@ -649,8 +649,8 @@ module ActiveSupport
         when String, Symbol
           handle_unexpected_args(name_or_object, payload, kwargs) if payload && kwargs.any?
           if kwargs.any?
-            # Keyword argument keys are always symbols; no key conversion needed
-            filter ? payload_filter.filter(kwargs) : kwargs
+            resolved = kwargs.transform_keys(&:to_sym)
+            filter ? payload_filter.filter(resolved) : resolved
           elsif payload
             resolved = payload.transform_keys(&:to_sym)
             filter ? payload_filter.filter(resolved) : resolved

@@ -2,6 +2,7 @@
 
 require_relative "abstract_unit"
 require "active_support/testing/event_reporter_assertions"
+require "active_support/log_subscriber/test_helper"
 
 class StructuredEventSubscriberTest < ActiveSupport::TestCase
   include ActiveSupport::Testing::EventReporterAssertions
@@ -35,6 +36,47 @@ class StructuredEventSubscriberTest < ActiveSupport::TestCase
     ActiveSupport.event_reporter.debug_mode = @old_debug_mode
     TestSubscriber.detach_from :test
     ActiveSupport::StructuredEventSubscriber.detach_from :test
+  end
+
+  class LeveledSubscriber < ActiveSupport::StructuredEventSubscriber
+    def leveled_event(event)
+      emit_event("test.leveled_event", **event.payload)
+    end
+    emits_at_level :leveled_event, :info
+  end
+
+  class InfoLogSubscriber < ActiveSupport::EventReporter::LogSubscriber
+    self.namespace = "test"
+
+    def leveled_event(event)
+      info "hello"
+    end
+    event_log_level :leveled_event, :info
+  end
+
+  def test_an_event_declared_at_a_level_no_reporter_subscriber_accepts_is_silenced
+    reporter = ActiveSupport.event_reporter
+    original_subscribers = reporter.subscribers.dup
+    reporter.subscribers.clear
+
+    logger = ActiveSupport::LogSubscriber::TestHelper::MockLogger.new(Logger::ERROR)
+    InfoLogSubscriber.logger = logger
+    subscriber = LeveledSubscriber.new
+    LeveledSubscriber.attach_to :test, subscriber
+
+    reporter.subscribe(InfoLogSubscriber.new, &InfoLogSubscriber.subscription_filter)
+    assert subscriber.silenced?("leveled_event.test"), "an info event with only an error-level logger listening"
+
+    plain_subscriber = TestEventReporterSubscriber.new
+    reporter.subscribe(plain_subscriber)
+    assert_not subscriber.silenced?("leveled_event.test"), "a subscriber without a level check keeps the event"
+
+    reporter.unsubscribe(plain_subscriber)
+    logger.level = Logger::INFO
+    assert_not subscriber.silenced?("leveled_event.test"), "a logger accepting :info keeps the event"
+  ensure
+    LeveledSubscriber.detach_from :test
+    reporter.subscribers.replace(original_subscribers) if original_subscribers
   end
 
   def test_emit_event_calls_event_reporter_notify
