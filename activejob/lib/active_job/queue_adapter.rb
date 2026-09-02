@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/string/inflections"
+require "concurrent/map"
 
 module ActiveJob
   class << self
@@ -8,8 +9,15 @@ module ActiveJob
       return adapter.queue_adapter_name if adapter.respond_to?(:queue_adapter_name)
 
       adapter_class = adapter.is_a?(Module) ? adapter : adapter.class
-      "#{adapter_class.name.demodulize.delete_suffix('Adapter')}"
+      # Derived from the class name once per adapter class: every enqueue and
+      # perform event asks for it
+      adapter_names[adapter_class] ||= adapter_class.name.demodulize.delete_suffix("Adapter").freeze
     end
+
+    private
+      def adapter_names
+        @adapter_names ||= Concurrent::Map.new
+      end
   end
 
   # = Active Job Queue adapter
