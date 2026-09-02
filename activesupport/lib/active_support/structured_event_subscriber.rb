@@ -31,6 +31,7 @@ module ActiveSupport
   # The subscriber can then emit a structured event via the +emit_event+ method.
   class StructuredEventSubscriber < Subscriber
     class_attribute :debug_methods, instance_accessor: false, default: [] # :nodoc:
+    class_attribute :emit_levels, instance_accessor: false, default: {}.freeze # :nodoc:
 
     class << self
       def attach_to(...) # :nodoc:
@@ -43,6 +44,7 @@ module ActiveSupport
         def set_silenced_events
           if subscriber
             subscriber.silenced_events = debug_methods.to_h { |method| ["#{method}.#{namespace}", true] }
+            subscriber.notification_levels = emit_levels.to_h { |method, level| ["#{method}.#{namespace}", level] }
           end
         end
 
@@ -50,18 +52,36 @@ module ActiveSupport
           self.debug_methods += [method]
           set_silenced_events
         end
+
+        # Declares the severity this handler emits its events at, so the
+        # whole notification can be skipped when no reporter subscriber
+        # would accept that severity
+        def emits_at_level(method, level)
+          self.emit_levels = emit_levels.merge(method.to_s => level).freeze
+          set_silenced_events
+        end
     end
 
     def initialize
       super
       @silenced_events = {}
+      @notification_levels = {}
     end
 
     def silenced?(event)
-      ActiveSupport.event_reporter.subscribers.none? || (@silenced_events.key?(event) && !ActiveSupport.event_reporter.debug_mode?)
+      reporter = ActiveSupport.event_reporter
+      return true if reporter.subscribers.none?
+      return true if @silenced_events.key?(event) && !reporter.debug_mode?
+
+      if (level = @notification_levels[event])
+        !reporter.severity_interest?(level)
+      else
+        false
+      end
     end
 
     attr_writer :silenced_events # :nodoc:
+    attr_writer :notification_levels # :nodoc:
 
     # Emit a structured event via Rails.event.notify.
     #

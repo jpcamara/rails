@@ -1,3 +1,30 @@
+*   Generate job ids lazily and parse `enqueued_at` and `scheduled_at` on first read.
+
+    `ActiveJob::Base.execute` no longer generates a job id that deserialization
+    immediately replaces, and the timestamps in the job data are parsed only
+    when a job reads them. Assigning a timestamp still takes precedence over
+    the job data, and `deserialize` still replaces a timestamp only when the
+    job data carries one. A job id is generated the first time `job_id` is
+    read, so a job duplicated before its id was ever read gets an id of its own.
+
+    *JP Camara*
+
+*   Cut the fixed cost of enqueuing a job.
+
+    The enqueue instrumentation and log tagging that ran as `around_enqueue`
+    callbacks now wrap `raw_enqueue` at the same layers, so a job that defines
+    no callbacks runs an empty callback chain, and the `enqueue.active_job`
+    event now wraps the whole chain, prepended callbacks included. Active Job's
+    log and structured event subscribers declare the levels their enqueue
+    events log at, so when no `Rails.event` subscriber would accept that level
+    the event is never built. The serialized job data is unchanged.
+
+    *JP Camara*
+
+*   Resolve the default queue name without calling a proc per job instance.
+
+    *JP Camara*
+
 *   Fix continuation step cursors losing their type when a job is interrupted
     and resumed.
 

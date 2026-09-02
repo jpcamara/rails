@@ -1,3 +1,14 @@
+*   Let `ActiveSupport::EventReporter` skip events no subscriber would log.
+
+    `ActiveSupport::EventReporter::LogSubscriber.subscription_filter` also
+    checks the logger's level for the event's declared severity, structured
+    event subscribers can declare with `emits_at_level` the severity a
+    notification emits at so `ActiveSupport::Notifications` can skip the whole
+    event when no reporter subscriber would accept it, and `source_location`
+    is captured only when a subscriber wants it.
+
+    *JP Camara*
+
 *   Return a UTC time from `Time.rfc3339` for strings with the "Z" UTC designator.
 
     ```ruby

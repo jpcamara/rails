@@ -59,6 +59,33 @@ class ActiveSupport::EventReporter::LogSubscriberTest < ActiveSupport::TestCase
     assert_empty @logger.logged(:debug)
   end
 
+  test "a logger that cannot answer the level check is reported when the subscriber emits, not raised" do
+    MyLogSubscriber.logger = Object.new
+
+    assert_error_reported(NoMethodError) do
+      assert_nothing_raised { ActiveSupport.event_reporter.notify("test.info_only") }
+    end
+  end
+
+  test "events with no declared level reach a subscriber that emits them itself" do
+    subscriber_class = Class.new(ActiveSupport::EventReporter::LogSubscriber) do
+      self.namespace = "test"
+
+      def emit(event)
+        logger.info "custom #{event[:name]}"
+      end
+    end
+    subscriber_class.logger = @logger
+    subscriber = subscriber_class.new
+    ActiveSupport.event_reporter.subscribe(subscriber, &subscriber_class.subscription_filter)
+
+    ActiveSupport.event_reporter.notify("test.custom")
+
+    assert_equal ["custom test.custom"], @logger.logged(:info)
+  ensure
+    ActiveSupport.event_reporter.unsubscribe(subscriber) if subscriber
+  end
+
   test "default logger" do
     MyLogSubscriber.logger = nil
 

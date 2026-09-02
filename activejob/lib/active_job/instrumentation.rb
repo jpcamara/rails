@@ -16,29 +16,49 @@ module ActiveJob
   module Instrumentation # :nodoc:
     extend ActiveSupport::Concern
 
-    included do
-      around_enqueue do |_, block|
-        scheduled_at ? instrument(:enqueue_at, &block) : instrument(:enqueue, &block)
-      end
-    end
+    EVENT_NAMES = {
+      enqueue: "enqueue.active_job",
+      enqueue_at: "enqueue_at.active_job",
+      perform: "perform.active_job",
+      perform_start: "perform_start.active_job",
+      enqueue_retry: "enqueue_retry.active_job",
+      retry_stopped: "retry_stopped.active_job",
+      discard: "discard.active_job",
+    }.freeze
 
     def perform_now
       instrument(:perform) { super }
     end
 
-    def instrument(operation, payload = {}, &block) # :nodoc:
+    def instrument(operation, payload = {}) # :nodoc:
+      event_name = EVENT_NAMES[operation] || "#{operation}.active_job"
+
+      # Skip event construction entirely when nobody is listening
+      unless ActiveSupport::Notifications.notifier.listening?(event_name)
+        value = (yield payload if block_given?)
+        @_halted_callback_hook_called = nil
+        return value
+      end
+
       payload[:job] = self
       payload[:adapter] = queue_adapter
 
-      ActiveSupport::Notifications.instrument("#{operation}.active_job", payload) do |payload|
-        value = block.call(payload) if block
-        payload[:aborted] = true if @_halted_callback_hook_called
+      ActiveSupport::Notifications.instrument(event_name, payload) do |inner_payload|
+        value = (yield inner_payload if block_given?)
+        inner_payload[:aborted] = true if @_halted_callback_hook_called
         @_halted_callback_hook_called = nil
         value
       end
     end
 
     private
+      # Wraps the same layer the previous around_enqueue callback did (it was
+      # registered first, so it always ran outermost), but keeps the enqueue
+      # callback chain empty for jobs that define no callbacks of their own
+      def raw_enqueue
+        scheduled_at ? instrument(:enqueue_at) { super } : instrument(:enqueue) { super }
+      end
+
       def _perform_job
         instrument(:perform_start)
         super

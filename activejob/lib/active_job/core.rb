@@ -19,11 +19,24 @@ module ActiveJob
     attr_accessor :arguments
     attr_writer :serialized_arguments
 
-    # Time when the job should be performed
-    attr_accessor :scheduled_at
+    # Time when the job should be performed. Parsed lazily from the
+    # serialized job data, since most jobs are executed without reading it.
+    def scheduled_at
+      @scheduled_at ||= (deserialize_time(@serialized_scheduled_at) if @serialized_scheduled_at)
+    end
 
-    # Job Identifier
-    attr_accessor :job_id
+    def scheduled_at=(value)
+      @serialized_scheduled_at = nil
+      @scheduled_at = value
+    end
+
+    # Job Identifier. Generated lazily: jobs instantiated to be deserialized
+    # get their id from the job data, without paying for one they won't use.
+    def job_id
+      @job_id ||= SecureRandom.uuid
+    end
+
+    attr_writer :job_id
 
     # Queue in which the job will reside.
     attr_writer :queue_name
@@ -49,8 +62,27 @@ module ActiveJob
     # Timezone to be used during the job.
     attr_accessor :timezone
 
-    # Track when a job was enqueued
-    attr_accessor :enqueued_at
+    # Track when a job was enqueued. Parsed lazily from the serialized job
+    # data, since most jobs are executed without reading it.
+    def enqueued_at
+      @enqueued_at ||= (deserialize_time(@serialized_enqueued_at) if @serialized_enqueued_at)
+    end
+
+    def enqueued_at=(value)
+      @serialized_enqueued_at = nil
+      @enqueued_at = value
+    end
+
+    # The serialized forms of +enqueued_at+ and +scheduled_at+: the strings
+    # from the job data when the job was deserialized and the timestamp never
+    # reassigned, otherwise formatted from the timestamp
+    def serialized_enqueued_at # :nodoc:
+      @serialized_enqueued_at || @enqueued_at&.utc&.iso8601(9)
+    end
+
+    def serialized_scheduled_at # :nodoc:
+      @serialized_scheduled_at || @scheduled_at&.utc&.iso8601(9)
+    end
 
     # Track whether the adapter received the job successfully.
     attr_writer :successfully_enqueued # :nodoc:
@@ -103,9 +135,11 @@ module ActiveJob
     def initialize(*arguments, **kwargs)
       arguments << Hash.ruby2_keywords_hash(kwargs) unless kwargs.empty?
       @arguments  = arguments
-      @job_id     = SecureRandom.uuid
+      @job_id     = nil
       @queue_name = self.class.queue_name
       @scheduled_at = nil
+      @serialized_scheduled_at = nil
+      @serialized_enqueued_at = nil
       @priority   = self.class.priority
       @executions = 0
       @exception_executions = {}
@@ -126,9 +160,26 @@ module ActiveJob
         "exception_executions" => exception_executions,
         "locale"     => locale || I18n.locale.to_s,
         "timezone"   => timezone,
-        "enqueued_at" => Time.now.utc.iso8601(9),
-        "scheduled_at" => scheduled_at ? scheduled_at.utc.iso8601(9) : nil,
+        "enqueued_at" => Core.utc_iso8601_now,
+        "scheduled_at" => serialized_scheduled_at,
       }
+    end
+
+    # Formats the current UTC time as nanosecond-precision ISO8601, reusing
+    # the formatted prefix within the same second: under bursts of enqueues
+    # only the fractional part changes. The cache is a benign race: any
+    # concurrently written value is valid for its own second.
+    def self.utc_iso8601_now # :nodoc:
+      now = Time.now
+      sec = now.to_i
+      cached_sec, prefix = @iso8601_cache
+
+      unless sec == cached_sec
+        prefix = Time.at(sec).utc.strftime("%Y-%m-%dT%H:%M:%S.")
+        @iso8601_cache = [ sec, prefix ].freeze
+      end
+
+      format("%s%09dZ", prefix, now.nsec)
     end
 
     # Attaches the stored job data to the current instance. Receives a hash
@@ -167,8 +218,16 @@ module ActiveJob
       self.exception_executions = job_data["exception_executions"]
       self.locale               = job_data["locale"] || I18n.locale.to_s
       self.timezone             = job_data["timezone"] || Time.zone&.name
-      self.enqueued_at          = deserialize_time(job_data["enqueued_at"]) if job_data["enqueued_at"]
-      self.scheduled_at         = deserialize_time(job_data["scheduled_at"]) if job_data["scheduled_at"]
+      # A timestamp in the job data replaces whatever the instance holds; an
+      # absent one leaves it alone, as before
+      if (enqueued_at = job_data["enqueued_at"])
+        @enqueued_at = nil
+        @serialized_enqueued_at = enqueued_at
+      end
+      if (scheduled_at = job_data["scheduled_at"])
+        @scheduled_at = nil
+        @serialized_scheduled_at = scheduled_at
+      end
     end
 
     # Configures the job with the given options.

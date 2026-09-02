@@ -349,7 +349,11 @@ module ActiveSupport
       unless subscriber.respond_to?(:emit)
         raise ArgumentError, "Event subscriber #{subscriber.class.name} must respond to #emit"
       end
-      @subscribers << { subscriber: subscriber, filter: filter }
+      wants_source_location = !subscriber.class.respond_to?(:wants_source_location?) ||
+        subscriber.class.wants_source_location?
+      severity_class = subscriber.class.respond_to?(:severity_enabled?) ? subscriber.class : nil
+      @subscribers << { subscriber: subscriber, filter: filter, source_location: wants_source_location,
+                        severity_class: severity_class }
     end
 
     # Unregister an event subscriber. Accepts either a subscriber or a class.
@@ -407,11 +411,13 @@ module ActiveSupport
       name = resolve_name(name_or_object)
       event = { name: name }
 
+      source_location_wanted = false
       subscribers = @subscribers.filter_map do |subscriber_entry|
         subscriber = subscriber_entry[:subscriber]
         filter = subscriber_entry[:filter]
 
         if !filter || filter.call(event)
+          source_location_wanted ||= subscriber_entry[:source_location]
           subscriber
         end
       end
@@ -428,7 +434,7 @@ module ActiveSupport
         timestamp: Process.clock_gettime(Process::CLOCK_REALTIME, :nanosecond),
       }
 
-      caller_location = caller_locations(caller_depth, 1)&.first
+      caller_location = caller_locations(caller_depth, 1)&.first if source_location_wanted
 
       if caller_location
         source_location = {
@@ -597,6 +603,16 @@ module ActiveSupport
     def reload_payload_filter # :nodoc:
       @payload_filter = nil
       payload_filter
+    end
+
+    # Whether any subscriber would accept an event emitted at the given
+    # severity. Subscribers advertise via a class-level `severity_enabled?`;
+    # subscribers without one are assumed interested.
+    def severity_interest?(level) # :nodoc:
+      @subscribers.any? do |subscriber_entry|
+        severity_class = subscriber_entry[:severity_class]
+        severity_class.nil? || severity_class.severity_enabled?(level)
+      end
     end
 
     private

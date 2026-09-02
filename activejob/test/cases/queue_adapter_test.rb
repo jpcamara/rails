@@ -17,6 +17,14 @@ module ActiveJob
 end
 
 class QueueAdapterTest < ActiveJob::TestCase
+  test "adapter_name is derived from the adapter class name once and reused" do
+    adapter = ActiveJob::QueueAdapters::InlineAdapter.new
+
+    assert_equal "Inline", ActiveJob.adapter_name(adapter)
+    assert_same ActiveJob.adapter_name(adapter), ActiveJob.adapter_name(ActiveJob::QueueAdapters::InlineAdapter)
+    assert_predicate ActiveJob.adapter_name(adapter), :frozen?
+  end
+
   test "should forbid nonsense arguments" do
     assert_raises(ArgumentError) { ActiveJob::Base.queue_adapter = Mutex }
     assert_raises(ArgumentError) { ActiveJob::Base.queue_adapter = Mutex.new }

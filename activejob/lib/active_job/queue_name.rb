@@ -51,8 +51,10 @@ module ActiveJob
       end
     end
 
+    DEFAULT_QUEUE_NAME_PROC = -> { self.class.default_queue_name } # :nodoc:
+
     included do
-      class_attribute :queue_name, instance_accessor: false, default: -> { self.class.default_queue_name }
+      class_attribute :queue_name, instance_accessor: false, default: DEFAULT_QUEUE_NAME_PROC
       class_attribute :queue_name_delimiter, instance_accessor: false, default: "_"
       class_attribute :queue_name_prefix
     end
@@ -60,7 +62,10 @@ module ActiveJob
     # Returns the name of the queue the job will be run on.
     def queue_name
       if @queue_name.is_a?(Proc)
-        @queue_name = self.class.queue_name_from_part(instance_exec(&@queue_name))
+        # The shared default proc only reads the class default; resolve it
+        # without instance_exec
+        part = @queue_name.equal?(DEFAULT_QUEUE_NAME_PROC) ? self.class.default_queue_name : instance_exec(&@queue_name)
+        @queue_name = self.class.queue_name_from_part(part)
       end
       @queue_name
     end

@@ -24,8 +24,6 @@ module ActiveJob
       # also configure a value, which will apply to themselves and any
       # subclasses.
       class_attribute :log_arguments, instance_accessor: false, default: true
-
-      around_enqueue(prepend: true) { |_, block| tag_logger(&block) }
     end
 
     def perform_now # :nodoc:
@@ -33,6 +31,13 @@ module ActiveJob
     end
 
     private
+      # Runs outermost around enqueue (this module is included after the
+      # others that override raw_enqueue), matching the prepended
+      # around_enqueue callback it replaces without occupying the chain
+      def raw_enqueue
+        tag_logger { super }
+      end
+
       def tag_logger(*tags, &block)
         if logger.respond_to?(:tagged)
           tags.unshift "ActiveJob" unless logger_tagged_by_active_job?
